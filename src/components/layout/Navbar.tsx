@@ -22,6 +22,7 @@ export function Navbar() {
         <div className="beveled-card p-2 flex justify-between items-center relative overflow-hidden">
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href);
+            const LinkOrAnchor = item.href === '/patchboard' ? 'a' : Link;
             return (
               <motion.div
                 key={item.name}
@@ -29,7 +30,7 @@ export function Navbar() {
                 whileTap={{ scale: 0.9 }}
                 className="w-full"
               >
-                <Link 
+                <LinkOrAnchor 
                   href={item.href} 
                   className={`relative flex flex-col items-center justify-center w-full py-3 px-2 transition-colors duration-300 z-10 ${
                     isActive ? 'text-brand-primary' : 'text-slate-400 hover:text-slate-200'
@@ -46,7 +47,7 @@ export function Navbar() {
                       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     />
                   )}
-                </Link>
+                </LinkOrAnchor>
               </motion.div>
             );
           })}

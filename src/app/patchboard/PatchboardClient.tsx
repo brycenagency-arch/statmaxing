@@ -47,7 +47,7 @@ const TOPIC_BANK = [
 /* ─── Utils ──────────────────────────────────────────────── */
 const STORAGE_KEY = 'patchboard-state';
 const AUTH_KEY = 'patchboard-auth';
-const CORRECT_PASSWORD = 'RICHHH';
+const CORRECT_PASSWORD = 'BRAVE';
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
@@ -90,6 +90,11 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+        body {
+          background: #1b2229 !important;
+          background-image: none !important;
+          animation: none !important;
+        }
         .pb-gate-root {
           min-height: 100vh;
           display: flex;
@@ -535,7 +540,11 @@ function PatchboardApp() {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
-
+        body {
+          background: #1b2229 !important;
+          background-image: none !important;
+          animation: none !important;
+        }
         :root {
           --pb-bg: #1b2229;
           --pb-panel: #222b34;
@@ -962,13 +971,8 @@ function PatchboardApp() {
 }
 
 export default function PatchboardClient() {
-  const [unlocked, setUnlocked] = useState<boolean | null>(null);
+  const [unlocked, setUnlocked] = useState<boolean>(false);
 
-  useEffect(() => {
-    setUnlocked(localStorage.getItem(AUTH_KEY) === '1');
-  }, []);
-
-  if (unlocked === null) return null;
   if (!unlocked) return <PasswordGate onUnlock={() => setUnlocked(true)} />;
   return <PatchboardApp />;
 }
