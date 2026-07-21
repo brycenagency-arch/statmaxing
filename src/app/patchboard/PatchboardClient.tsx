@@ -79,16 +79,14 @@ function saveState(s: AppState) {
   } catch { /* ignore */ }
 }
 
-function syncPatchboardFromSupabase(onSyncComplete?: () => void) {
+function syncPatchboardFromSupabase(onSyncComplete?: (state: AppState) => void) {
   if (typeof window === 'undefined') return;
   import('@/lib/supabaseClient').then(({ supabase }) => {
     supabase.from('StateBackup').select('*').eq('key', STORAGE_KEY).single().then(({ data, error }) => {
       if (data && data.data) {
-        const localRaw = localStorage.getItem(STORAGE_KEY);
-        if (!localRaw || JSON.stringify(data.data) !== localRaw) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.data));
-          if (onSyncComplete) onSyncComplete();
-        }
+        const fetchedState = data.data as AppState;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(fetchedState));
+        if (onSyncComplete) onSyncComplete(fetchedState);
       }
     });
   });
@@ -482,11 +480,10 @@ function PatchboardApp() {
     if (s.profiles.length) setSelectedId(s.profiles[0].id);
     
     // Background sync from Supabase
-    syncPatchboardFromSupabase(() => {
-      const updatedState = loadState();
-      setAppState(updatedState);
-      if (updatedState.profiles.length && !selectedId) {
-        setSelectedId(updatedState.profiles[0].id);
+    syncPatchboardFromSupabase((cloudState) => {
+      setAppState(cloudState);
+      if (cloudState.profiles.length) {
+        setSelectedId(prev => prev || cloudState.profiles[0].id);
       }
     });
   }, []);
