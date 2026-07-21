@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Trash, Check, X } from 'lucide-react';
+import { Plus, Trash, Check, X, Archive, RotateCcw, Calendar, CheckSquare, FileText, History } from 'lucide-react';
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface ReasonEntry {
@@ -9,29 +9,63 @@ interface ReasonEntry {
   content: string;
   updatedAt: string;
 }
+
+interface ChecklistTask {
+  id: string;
+  title: string;
+}
+
+interface WeeklyLogRecord {
+  id: string;
+  dateRange: string;
+  scorePercent: number;
+  totalCompleted: number;
+  totalPossible: number;
+  createdAt: string;
+}
+
 interface ReasonState {
   reasons: ReasonEntry[];
+  tasks: ChecklistTask[];
+  weeklyChecks: Record<string, boolean>; // key: `${dayIdx}_${taskId}`
+  archivedWeeks: WeeklyLogRecord[];
 }
 
 /* ─── Config ─────────────────────────────────────────────── */
 const STORAGE_KEY = 'reason-state';
 const CORRECT_PASSWORD = 'BRAVE';
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
 function loadState(): ReasonState {
+  const defaultTasks: ChecklistTask[] = [
+    { id: 't1', title: 'Morning Hydration & Stretch' },
+    { id: 't2', title: 'Deep Work Session (2+ Hours)' },
+    { id: 't3', title: 'Workout / Physical Training' },
+    { id: 't4', title: 'Daily Review & Planning' }
+  ];
+
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as ReasonState;
-      return { reasons: parsed.reasons || [] };
+      const parsed = JSON.parse(raw) as Partial<ReasonState>;
+      return {
+        reasons: parsed.reasons || [],
+        tasks: parsed.tasks && parsed.tasks.length ? parsed.tasks : defaultTasks,
+        weeklyChecks: parsed.weeklyChecks || {},
+        archivedWeeks: parsed.archivedWeeks || []
+      };
     }
   } catch { /* fresh start */ }
   return {
     reasons: [
       { id: 'r1', name: 'My Core Purpose', content: 'Write down why you started and what drives you every day...', updatedAt: new Date().toISOString() },
       { id: 'r2', name: 'Legacy', content: 'What mark do you want to leave behind?', updatedAt: new Date().toISOString() }
-    ]
+    ],
+    tasks: defaultTasks,
+    weeklyChecks: {},
+    archivedWeeks: []
   };
 }
 
@@ -63,6 +97,44 @@ function syncReasonFromSupabase(onSyncComplete?: (state: ReasonState) => void) {
       }
     });
   });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PROGRESS RING COMPONENT
+═══════════════════════════════════════════════════════════ */
+function ProgressRing({ percent, label }: { percent: number; label: string }) {
+  const radius = 18;
+  const stroke = 3.5;
+  const normalizedRadius = radius - stroke * 0.5;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (percent / 100) * circumference;
+
+  return (
+    <div className="pb-progress-wrap">
+      <svg height={radius * 2} width={radius * 2} className="pb-ring-svg">
+        <circle
+          stroke="rgba(237,230,214,0.1)"
+          fill="transparent"
+          strokeWidth={stroke}
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        <circle
+          stroke="#e8a33d"
+          fill="transparent"
+          strokeWidth={stroke}
+          strokeDasharray={circumference + ' ' + circumference}
+          style={{ strokeDashoffset, transition: 'stroke-dashoffset 0.35s ease-in-out' }}
+          strokeLinecap="round"
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+      </svg>
+      <div className="pb-ring-text">{percent}%</div>
+    </div>
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -204,31 +276,34 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
    MAIN REASON APP
 ═══════════════════════════════════════════════════════════ */
 function ReasonApp() {
-  const [appState, setAppState] = useState<ReasonState>({ reasons: [] });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [appState, setAppState] = useState<ReasonState>({ reasons: [], tasks: [], weeklyChecks: {}, archivedWeeks: [] });
+  const [selectedId, setSelectedId] = useState<string>('daily-checklist');
   const [addingEntry, setAddingEntry] = useState(false);
+  const [addingTask, setAddingTask] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const newNameRef = useRef<HTMLInputElement>(null);
+  const newTaskRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const s = loadState();
     setAppState(s);
-    if (s.reasons.length) setSelectedId(s.reasons[0].id);
-
+    
     // Sync from Supabase
     syncReasonFromSupabase((cloudState) => {
       setAppState(cloudState);
-      if (cloudState.reasons.length) {
-        setSelectedId(prev => prev || cloudState.reasons[0].id);
-      }
     });
   }, []);
 
   useEffect(() => {
     if (addingEntry) setTimeout(() => newNameRef.current?.focus(), 0);
   }, [addingEntry]);
+
+  useEffect(() => {
+    if (addingTask) setTimeout(() => newTaskRef.current?.focus(), 0);
+  }, [addingTask]);
 
   function scheduleSave(s: ReasonState) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -244,6 +319,7 @@ function ReasonApp() {
     });
   }
 
+  /* --- Reason Management --- */
   function addReason() {
     const name = newName.trim();
     if (!name) return;
@@ -259,11 +335,7 @@ function ReasonApp() {
   function deleteReason(id: string) {
     mutate(s => { s.reasons = s.reasons.filter(r => r.id !== id); });
     if (selectedId === id) {
-      setAppState(prev => {
-        const remaining = prev.reasons.filter(r => r.id !== id);
-        setSelectedId(remaining.length ? remaining[0].id : null);
-        return prev;
-      });
+      setSelectedId('daily-checklist');
     }
     setConfirmDeleteId(null);
   }
@@ -278,7 +350,82 @@ function ReasonApp() {
     });
   }
 
-  const selected = appState.reasons.find(r => r.id === selectedId) || null;
+  /* --- Checklist Task Management --- */
+  function addTask() {
+    const title = newTaskTitle.trim();
+    if (!title) return;
+    mutate(s => {
+      s.tasks.push({ id: uid(), title });
+    });
+    setNewTaskTitle('');
+    setAddingTask(false);
+  }
+
+  function deleteTask(taskId: string) {
+    mutate(s => {
+      s.tasks = s.tasks.filter(t => t.id !== taskId);
+      // Clean up checks for this task
+      Object.keys(s.weeklyChecks).forEach(key => {
+        if (key.endsWith(`_${taskId}`)) {
+          delete s.weeklyChecks[key];
+        }
+      });
+    });
+  }
+
+  function toggleCheck(dayIdx: number, taskId: string) {
+    const key = `${dayIdx}_${taskId}`;
+    mutate(s => {
+      if (s.weeklyChecks[key]) {
+        delete s.weeklyChecks[key];
+      } else {
+        s.weeklyChecks[key] = true;
+      }
+    });
+  }
+
+  /* --- Reset & Save Week History --- */
+  function resetAndSaveWeek() {
+    const totalTasks = appState.tasks.length;
+    if (totalTasks === 0) return;
+
+    const totalPossible = totalTasks * 7;
+    let totalCompleted = 0;
+
+    for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+      for (const t of appState.tasks) {
+        if (appState.weeklyChecks[`${dayIdx}_${t.id}`]) {
+          totalCompleted++;
+        }
+      }
+    }
+
+    const scorePercent = Math.round((totalCompleted / totalPossible) * 100);
+    const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    mutate(s => {
+      s.archivedWeeks.unshift({
+        id: uid(),
+        dateRange: `Week of ${dateStr}`,
+        scorePercent,
+        totalCompleted,
+        totalPossible,
+        createdAt: new Date().toISOString()
+      });
+      // Clear current week checks
+      s.weeklyChecks = {};
+    });
+
+    setSelectedId('weekly-logs');
+  }
+
+  function deleteLogRecord(logId: string) {
+    mutate(s => {
+      s.archivedWeeks = s.archivedWeeks.filter(l => l.id !== logId);
+    });
+  }
+
+  const selectedReason = appState.reasons.find(r => r.id === selectedId) || null;
 
   return (
     <>
@@ -336,7 +483,7 @@ function ReasonApp() {
           min-height: 600px;
         }
         .pb-sidebar {
-          width: 240px;
+          width: 250px;
           border-right: 1px solid var(--pb-border);
           padding: 18px 0;
           display: flex;
@@ -348,13 +495,14 @@ function ReasonApp() {
           font-size: 10px;
           letter-spacing: 2px;
           color: var(--pb-muted);
-          padding: 0 20px 10px;
+          padding: 14px 20px 8px;
         }
+        .pb-sidebar-label:first-child { padding-top: 0; }
         .pb-line {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 12px 20px;
+          padding: 11px 20px;
           cursor: pointer;
           border-left: 2px solid transparent;
           transition: background 0.12s;
@@ -373,7 +521,7 @@ function ReasonApp() {
           border-color: var(--pb-amber);
           box-shadow: 0 0 6px var(--pb-amber);
         }
-        .pb-line-name { font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pb-line-name { font-size: 13.5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
         .pb-line-del {
           opacity: 0;
           color: var(--pb-muted);
@@ -386,23 +534,23 @@ function ReasonApp() {
         }
         .pb-line:hover .pb-line-del { opacity: 1; }
         .pb-add {
-          margin: 10px 20px 0;
+          margin: 8px 20px 0;
           display: flex;
           align-items: center;
           gap: 6px;
-          font-size: 13px;
+          font-size: 12.5px;
           color: var(--pb-teal);
           background: none;
           border: 1px dashed var(--pb-border);
           border-radius: 6px;
-          padding: 10px 12px;
+          padding: 8px 10px;
           cursor: pointer;
           width: calc(100% - 40px);
           transition: border-color 0.15s;
           font-family: 'IBM Plex Sans', sans-serif;
         }
         .pb-add:hover { border-color: var(--pb-teal); }
-        .pb-add-form { margin: 10px 20px 0; display: flex; gap: 6px; }
+        .pb-add-form { margin: 8px 20px 0; display: flex; gap: 6px; }
         .pb-input {
           background: var(--pb-panel-2);
           border: 1px solid var(--pb-border);
@@ -414,15 +562,17 @@ function ReasonApp() {
           width: 100%;
           outline: none;
         }
-        .pb-main { flex: 1; padding: 28px 36px; display: flex; flex-direction: column; }
+        .pb-main { flex: 1; padding: 24px 28px; display: flex; flex-direction: column; overflow-y: auto; }
         .pb-empty { color: var(--pb-muted); font-size: 14px; margin-top: 40px; text-align: center; }
         .pb-main-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 18px;
+          margin-bottom: 20px;
+          flex-wrap: wrap;
+          gap: 12px;
         }
-        .pb-main-name { font-family: 'Special Elite', monospace; font-size: 22px; color: var(--pb-amber); letter-spacing: 1px; }
+        .pb-main-name { font-family: 'Special Elite', monospace; font-size: 22px; color: var(--pb-amber); letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
         .pb-textbox {
           flex: 1;
           width: 100%;
@@ -453,11 +603,165 @@ function ReasonApp() {
           display: flex;
           align-items: center;
         }
+        .pb-btn-action {
+          background: var(--pb-amber);
+          color: #1b2229;
+          border: none;
+          font-weight: 600;
+          font-size: 12.5px;
+          padding: 8px 14px;
+          border-radius: 6px;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-family: 'IBM Plex Mono', monospace;
+          letter-spacing: 0.5px;
+          transition: filter 0.15s;
+        }
+        .pb-btn-action:hover { filter: brightness(1.1); }
 
-        @media (max-width: 640px) {
+        /* ─── 7-Day Grid ─── */
+        .pb-grid-cols {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 12px;
+          flex: 1;
+          min-width: 780px;
+        }
+        .pb-day-col {
+          background: var(--pb-panel);
+          border: 1px solid var(--pb-border);
+          border-radius: 8px;
+          padding: 14px 10px;
+          display: flex;
+          flex-direction: column;
+        }
+        .pb-day-header {
+          text-align: center;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--pb-border);
+          margin-bottom: 12px;
+        }
+        .pb-day-name {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--pb-cream);
+          margin-bottom: 8px;
+          letter-spacing: 1px;
+        }
+        .pb-progress-wrap {
+          position: relative;
+          width: 36px;
+          height: 36px;
+          margin: 0 auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .pb-ring-svg { transform: rotate(-90deg); }
+        .pb-ring-text {
+          position: absolute;
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 9px;
+          color: var(--pb-amber);
+          font-weight: 600;
+        }
+        .pb-task-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          flex: 1;
+        }
+        .pb-task-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          padding: 8px;
+          background: var(--pb-panel-2);
+          border: 1px solid var(--pb-border);
+          border-radius: 6px;
+          cursor: pointer;
+          transition: border-color 0.15s;
+          user-select: none;
+        }
+        .pb-task-item:hover { border-color: var(--pb-amber); }
+        .pb-task-item.checked {
+          background: rgba(232,163,61,0.08);
+          border-color: rgba(232,163,61,0.4);
+        }
+        .pb-task-check {
+          width: 14px; height: 14px;
+          border-radius: 3px;
+          border: 1.5px solid var(--pb-muted);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-top: 2px;
+          flex-shrink: 0;
+        }
+        .pb-task-item.checked .pb-task-check {
+          background: var(--pb-amber);
+          border-color: var(--pb-amber);
+          color: #1b2229;
+        }
+        .pb-task-title {
+          font-size: 12px;
+          color: var(--pb-cream);
+          line-height: 1.35;
+          word-break: break-word;
+        }
+        .pb-task-item.checked .pb-task-title {
+          color: var(--pb-muted);
+          text-decoration: line-through;
+        }
+        .pb-task-mgr {
+          background: var(--pb-panel);
+          border: 1px solid var(--pb-border);
+          border-radius: 8px;
+          padding: 16px;
+          margin-top: 16px;
+        }
+        .pb-task-mgr-title {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 11px;
+          color: var(--pb-teal);
+          letter-spacing: 1px;
+          margin-bottom: 12px;
+          text-transform: uppercase;
+        }
+        .pb-task-mgr-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 8px 12px;
+          background: var(--pb-panel-2);
+          border: 1px solid var(--pb-border);
+          border-radius: 6px;
+          margin-bottom: 8px;
+          font-size: 13px;
+        }
+
+        /* ─── Logs / History View ─── */
+        .pb-log-card {
+          background: var(--pb-panel);
+          border: 1px solid var(--pb-border);
+          border-radius: 8px;
+          padding: 18px;
+          margin-bottom: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .pb-log-title { font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: var(--pb-cream); margin-bottom: 4px; }
+        .pb-log-sub { font-size: 12px; color: var(--pb-muted); }
+        .pb-log-score { font-family: 'Special Elite', monospace; font-size: 24px; color: var(--pb-amber); text-align: right; }
+
+        @media (max-width: 900px) {
           .pb-body { flex-direction: column; }
           .pb-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--pb-border); }
-          .pb-main { padding: 20px; }
+          .pb-grid-cols { overflow-x: auto; }
         }
       `}</style>
 
@@ -468,8 +772,32 @@ function ReasonApp() {
         </div>
 
         <div className="pb-body">
+          {/* Sidebar */}
           <div className="pb-sidebar">
-            <div className="pb-sidebar-label">ENTRIES</div>
+            <div className="pb-sidebar-label">CHECKLIST &amp; LOGS</div>
+            
+            <div
+              className={'pb-line' + (selectedId === 'daily-checklist' ? ' active' : '')}
+              onClick={() => setSelectedId('daily-checklist')}
+            >
+              <div className="pb-jack" />
+              <div className="pb-line-name">
+                <CheckSquare size={14} color="var(--pb-amber)" /> Daily Checklist
+              </div>
+            </div>
+
+            <div
+              className={'pb-line' + (selectedId === 'weekly-logs' ? ' active' : '')}
+              onClick={() => setSelectedId('weekly-logs')}
+            >
+              <div className="pb-jack" />
+              <div className="pb-line-name">
+                <History size={14} color="var(--pb-teal)" /> History Logs ({appState.archivedWeeks.length})
+              </div>
+            </div>
+
+            <div className="pb-sidebar-label">MY REASONS</div>
+
             {appState.reasons.map(r => (
               <div
                 key={r.id}
@@ -477,7 +805,9 @@ function ReasonApp() {
                 onClick={() => { setSelectedId(r.id); setConfirmDeleteId(null); }}
               >
                 <div className="pb-jack" />
-                <div className="pb-line-name">{r.name}</div>
+                <div className="pb-line-name">
+                  <FileText size={14} color="var(--pb-cream)" /> {r.name}
+                </div>
                 {confirmDeleteId === r.id ? (
                   <div className="pb-confirm-bar" onClick={e => e.stopPropagation()}>
                     <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteReason(r.id)}>
@@ -498,6 +828,7 @@ function ReasonApp() {
                 )}
               </div>
             ))}
+
             {addingEntry ? (
               <div className="pb-add-form">
                 <input
@@ -515,23 +846,146 @@ function ReasonApp() {
               </div>
             ) : (
               <button className="pb-add" onClick={() => setAddingEntry(true)}>
-                <Plus size={14} /> New entry
+                <Plus size={14} /> New reason
               </button>
             )}
           </div>
 
+          {/* Main Area */}
           <div className="pb-main">
-            {!selected ? (
-              <div className="pb-empty">No entries yet. Add one to write down your why.</div>
-            ) : (
+            {selectedId === 'daily-checklist' && (
               <>
                 <div className="pb-main-header">
-                  <div className="pb-main-name">{selected.name}</div>
+                  <div className="pb-main-name">
+                    <CheckSquare size={22} color="var(--pb-amber)" /> Daily Checklist
+                  </div>
+                  <button className="pb-btn-action" onClick={resetAndSaveWeek}>
+                    <Archive size={14} /> Reset &amp; Archive Week
+                  </button>
+                </div>
+
+                {/* 7-Day Grid */}
+                <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+                  <div className="pb-grid-cols">
+                    {DAYS.map((dayName, dayIdx) => {
+                      const totalTasks = appState.tasks.length;
+                      let dayCompleted = 0;
+                      if (totalTasks > 0) {
+                        appState.tasks.forEach(t => {
+                          if (appState.weeklyChecks[`${dayIdx}_${t.id}`]) dayCompleted++;
+                        });
+                      }
+                      const percent = totalTasks > 0 ? Math.round((dayCompleted / totalTasks) * 100) : 0;
+
+                      return (
+                        <div key={dayName} className="pb-day-col">
+                          <div className="pb-day-header">
+                            <div className="pb-day-name">{dayName.toUpperCase()}</div>
+                            <ProgressRing percent={percent} label={dayName} />
+                          </div>
+
+                          <div className="pb-task-list">
+                            {appState.tasks.map(t => {
+                              const checked = !!appState.weeklyChecks[`${dayIdx}_${t.id}`];
+                              return (
+                                <div
+                                  key={t.id}
+                                  className={'pb-task-item' + (checked ? ' checked' : '')}
+                                  onClick={() => toggleCheck(dayIdx, t.id)}
+                                >
+                                  <div className="pb-task-check">
+                                    {checked && <Check size={10} />}
+                                  </div>
+                                  <div className="pb-task-title">{t.title}</div>
+                                </div>
+                              );
+                            })}
+                            {appState.tasks.length === 0 && (
+                              <div style={{ fontSize: 11, color: 'var(--pb-muted)', textAlign: 'center', marginTop: 10 }}>
+                                No tasks added yet.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Task Manager (Add/Remove shared tasks) */}
+                <div className="pb-task-mgr">
+                  <div className="pb-task-mgr-title">Manage Shared Tasks (Applies to all 7 Days)</div>
+                  {appState.tasks.map(t => (
+                    <div key={t.id} className="pb-task-mgr-item">
+                      <span>{t.title}</span>
+                      <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteTask(t.id)}>
+                        <Trash size={13} />
+                      </button>
+                    </div>
+                  ))}
+
+                  {addingTask ? (
+                    <div className="pb-add-form" style={{ margin: '8px 0 0' }}>
+                      <input
+                        ref={newTaskRef}
+                        className="pb-input"
+                        placeholder="New Task Name (e.g. Read 20 Pages)"
+                        value={newTaskTitle}
+                        onChange={e => setNewTaskTitle(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') addTask();
+                          if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle(''); }
+                        }}
+                      />
+                      <button className="pb-icon-btn" onClick={addTask}><Check size={14} /></button>
+                    </div>
+                  ) : (
+                    <button className="pb-add" style={{ margin: '8px 0 0', width: '100%' }} onClick={() => setAddingTask(true)}>
+                      <Plus size={14} /> Add new shared task
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {selectedId === 'weekly-logs' && (
+              <>
+                <div className="pb-main-header">
+                  <div className="pb-main-name">
+                    <History size={22} color="var(--pb-teal)" /> History Logs
+                  </div>
+                </div>
+
+                {appState.archivedWeeks.length === 0 ? (
+                  <div className="pb-empty">No archived weeks yet. Complete a week on your Daily Checklist and click "Reset &amp; Archive Week".</div>
+                ) : (
+                  appState.archivedWeeks.map(log => (
+                    <div key={log.id} className="pb-log-card">
+                      <div>
+                        <div className="pb-log-title">{log.dateRange}</div>
+                        <div className="pb-log-sub">Completed {log.totalCompleted} of {log.totalPossible} total task instances</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div className="pb-log-score">{log.scorePercent}%</div>
+                        <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteLogRecord(log.id)}>
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </>
+            )}
+
+            {selectedId !== 'daily-checklist' && selectedId !== 'weekly-logs' && selectedReason && (
+              <>
+                <div className="pb-main-header">
+                  <div className="pb-main-name">{selectedReason.name}</div>
                 </div>
                 <textarea
                   className="pb-textbox"
                   placeholder="Write your why here..."
-                  value={selected.content}
+                  value={selectedReason.content}
                   onChange={e => updateContent(e.target.value)}
                 />
               </>
