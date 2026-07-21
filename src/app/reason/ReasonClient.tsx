@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Trash, Check, X, Archive, RotateCcw, Calendar, CheckSquare, FileText, History, Edit2, ChevronDown, ChevronRight, Info } from 'lucide-react';
+import { Plus, Trash, Check, X, Archive, RotateCcw, Calendar, CheckSquare, FileText, History, Edit2, ChevronDown, ChevronRight, Info, Clock } from 'lucide-react';
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface ReasonEntry {
@@ -25,11 +25,22 @@ interface WeeklyLogRecord {
   createdAt: string;
 }
 
+interface DailyLogRecord {
+  id: string;
+  dateStr: string;
+  dayName: string;
+  slots: { hour: string; planned: string; actual: string }[];
+  createdAt: string;
+}
+
 interface ReasonState {
   reasons: ReasonEntry[];
   tasks: ChecklistTask[];
   weeklyChecks: Record<string, boolean>; // key: `${dayIdx}_${taskId}`
   archivedWeeks: WeeklyLogRecord[];
+  archivedDays: DailyLogRecord[];
+  hourlyPlan: Record<string, string>; // key: `${dayIdx}_${hourStr}`
+  hourlyActual: Record<string, string>; // key: `${dayIdx}_${hourStr}`
 }
 
 /* ─── Config ─────────────────────────────────────────────── */
@@ -55,7 +66,10 @@ function sanitizeReasonState(raw: any): ReasonState {
       ],
       tasks: DEFAULT_TASKS,
       weeklyChecks: {},
-      archivedWeeks: []
+      archivedWeeks: [],
+      archivedDays: [],
+      hourlyPlan: {},
+      hourlyActual: {}
     };
   }
 
@@ -63,7 +77,10 @@ function sanitizeReasonState(raw: any): ReasonState {
     reasons: Array.isArray(raw.reasons) ? raw.reasons : [],
     tasks: Array.isArray(raw.tasks) && raw.tasks.length ? raw.tasks : DEFAULT_TASKS,
     weeklyChecks: raw.weeklyChecks && typeof raw.weeklyChecks === 'object' ? raw.weeklyChecks : {},
-    archivedWeeks: Array.isArray(raw.archivedWeeks) ? raw.archivedWeeks : []
+    archivedWeeks: Array.isArray(raw.archivedWeeks) ? raw.archivedWeeks : [],
+    archivedDays: Array.isArray(raw.archivedDays) ? raw.archivedDays : [],
+    hourlyPlan: raw.hourlyPlan && typeof raw.hourlyPlan === 'object' ? raw.hourlyPlan : {},
+    hourlyActual: raw.hourlyActual && typeof raw.hourlyActual === 'object' ? raw.hourlyActual : {}
   };
 }
 
@@ -285,7 +302,7 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
    MAIN REASON APP
 ═══════════════════════════════════════════════════════════ */
 function ReasonApp() {
-  const [appState, setAppState] = useState<ReasonState>({ reasons: [], tasks: [], weeklyChecks: {}, archivedWeeks: [] });
+  const [appState, setAppState] = useState<ReasonState>({ reasons: [], tasks: [], weeklyChecks: {}, archivedWeeks: [], archivedDays: [], hourlyPlan: {}, hourlyActual: {} });
   const [selectedId, setSelectedId] = useState<string>('daily-checklist');
   const [addingEntry, setAddingEntry] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
@@ -297,6 +314,7 @@ function ReasonApp() {
   const [editingTaskDesc, setEditingTaskDesc] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
+  const [planDayIdx, setPlanDayIdx] = useState<number>(0);
   const newNameRef = useRef<HTMLInputElement>(null);
   const newTaskRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -411,6 +429,68 @@ function ReasonApp() {
       } else {
         s.weeklyChecks[key] = true;
       }
+    });
+  }
+
+  function updateHourlySlot(dayIdx: number, hourStr: string, text: string) {
+    const key = `${dayIdx}_${hourStr}`;
+    mutate(s => {
+      if (!text.trim()) {
+        delete s.hourlyPlan[key];
+      } else {
+        s.hourlyPlan[key] = text;
+      }
+    });
+  }
+
+  function updateHourlyActualSlot(dayIdx: number, hourStr: string, text: string) {
+    const key = `${dayIdx}_${hourStr}`;
+    mutate(s => {
+      if (!text.trim()) {
+        delete s.hourlyActual[key];
+      } else {
+        s.hourlyActual[key] = text;
+      }
+    });
+  }
+
+  function logCurrentDayPlanAndDebrief() {
+    const hours = [
+      '5:00 AM', '6:00 AM', '7:00 AM', '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+      '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM',
+      '9:00 PM', '10:00 PM', '11:00 PM'
+    ];
+
+    const dayName = DAYS[planDayIdx];
+    const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
+    const slots = hours.map(h => {
+      const k = `${planDayIdx}_${h}`;
+      return {
+        hour: h,
+        planned: appState.hourlyPlan[k] || '',
+        actual: appState.hourlyActual[k] || ''
+      };
+    }).filter(s => s.planned || s.actual);
+
+    if (slots.length === 0) return;
+
+    mutate(s => {
+      s.archivedDays.unshift({
+        id: uid(),
+        dateStr,
+        dayName,
+        slots,
+        createdAt: new Date().toISOString()
+      });
+    });
+
+    setSelectedId('weekly-logs');
+  }
+
+  function deleteDailyLogRecord(logId: string) {
+    mutate(s => {
+      s.archivedDays = s.archivedDays.filter(d => d.id !== logId);
     });
   }
 
@@ -817,6 +897,16 @@ function ReasonApp() {
             </div>
 
             <div
+              className={'pb-line' + (selectedId === 'daily-plan' ? ' active' : '')}
+              onClick={() => setSelectedId('daily-plan')}
+            >
+              <div className="pb-jack" />
+              <div className="pb-line-name">
+                <Clock size={14} color="var(--pb-amber)" /> Daily Plan
+              </div>
+            </div>
+
+            <div
               className={'pb-line' + (selectedId === 'weekly-logs' ? ' active' : '')}
               onClick={() => setSelectedId('weekly-logs')}
             >
@@ -1068,6 +1158,125 @@ function ReasonApp() {
               </>
             )}
 
+            {selectedId === 'daily-plan' && (
+              <>
+                <div className="pb-main-header">
+                  <div className="pb-main-name">
+                    <Clock size={22} color="var(--pb-amber)" /> Daily Plan
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Day Picker Pills */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {DAYS.map((dayName, idx) => (
+                        <button
+                          key={dayName}
+                          style={{
+                            background: planDayIdx === idx ? 'var(--pb-amber)' : 'var(--pb-panel)',
+                            color: planDayIdx === idx ? '#1b2229' : 'var(--pb-cream)',
+                            border: '1px solid var(--pb-border)',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontFamily: 'IBM Plex Mono, monospace',
+                            fontSize: '12px',
+                            fontWeight: planDayIdx === idx ? 700 : 400,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s'
+                          }}
+                          onClick={() => setPlanDayIdx(idx)}
+                        >
+                          {dayName.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button className="pb-btn-action" onClick={logCurrentDayPlanAndDebrief}>
+                      <Archive size={14} /> Log Today's Plan &amp; Debrief
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 14,
+                  background: 'var(--pb-panel)',
+                  border: '1px solid var(--pb-border)',
+                  borderRadius: 8,
+                  padding: 20
+                }}>
+                  <div style={{
+                    fontFamily: 'IBM Plex Mono, monospace',
+                    fontSize: 12,
+                    color: 'var(--pb-teal)',
+                    letterSpacing: 1,
+                    marginBottom: 6
+                  }}>
+                    HOURLY PLAN &amp; ACTUAL DEBRIEF — {DAYS[planDayIdx].toUpperCase()}
+                  </div>
+
+                  {[
+                    '5:00 AM', '6:00 AM', '7:00 AM', '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+                    '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM',
+                    '9:00 PM', '10:00 PM', '11:00 PM'
+                  ].map((hourLabel) => {
+                    const key = `${planDayIdx}_${hourLabel}`;
+                    const plannedVal = appState.hourlyPlan[key] || '';
+                    const actualVal = appState.hourlyActual[key] || '';
+                    return (
+                      <div key={hourLabel} style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 14,
+                        padding: '10px 12px',
+                        background: 'var(--pb-panel-2)',
+                        border: '1px solid var(--pb-border)',
+                        borderRadius: 6
+                      }}>
+                        <div style={{
+                          width: 80,
+                          fontFamily: 'IBM Plex Mono, monospace',
+                          fontSize: 12,
+                          color: 'var(--pb-amber)',
+                          fontWeight: 600,
+                          paddingTop: 8,
+                          flexShrink: 0
+                        }}>
+                          {hourLabel}
+                        </div>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <input
+                            className="pb-input"
+                            style={{
+                              padding: '7px 10px',
+                              fontSize: 13,
+                              background: plannedVal ? 'rgba(232,163,61,0.06)' : 'var(--pb-bg)',
+                              borderColor: plannedVal ? 'rgba(232,163,61,0.3)' : 'var(--pb-border)'
+                            }}
+                            placeholder="WHAT I NEED TO DO (Planned)"
+                            value={plannedVal}
+                            onChange={e => updateHourlySlot(planDayIdx, hourLabel, e.target.value)}
+                          />
+                          <input
+                            className="pb-input"
+                            style={{
+                              padding: '7px 10px',
+                              fontSize: 12,
+                              color: 'var(--pb-teal)',
+                              background: actualVal ? 'rgba(92,139,147,0.08)' : 'var(--pb-bg)',
+                              borderColor: actualVal ? 'rgba(92,139,147,0.4)' : 'var(--pb-border)'
+                            }}
+                            placeholder="WHAT I ACTUALLY DID (End of Day Debrief)"
+                            value={actualVal}
+                            onChange={e => updateHourlyActualSlot(planDayIdx, hourLabel, e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
             {selectedId === 'weekly-logs' && (
               <>
                 <div className="pb-main-header">
@@ -1076,24 +1285,67 @@ function ReasonApp() {
                   </div>
                 </div>
 
-                {appState.archivedWeeks.length === 0 ? (
-                  <div className="pb-empty">No archived weeks yet. Complete a week on your Daily Checklist and click "Reset &amp; Archive Week".</div>
-                ) : (
-                  appState.archivedWeeks.map(log => (
-                    <div key={log.id} className="pb-log-card">
-                      <div>
-                        <div className="pb-log-title">{log.dateRange}</div>
-                        <div className="pb-log-sub">Completed {log.totalCompleted} of {log.totalPossible} total task instances</div>
+                {/* Daily Debrief Logs */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, color: 'var(--pb-amber)', letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' }}>
+                    Daily Plan &amp; Debrief Logs ({appState.archivedDays.length})
+                  </div>
+
+                  {appState.archivedDays.length === 0 ? (
+                    <div className="pb-empty" style={{ marginTop: 10, textAlign: 'left' }}>No daily plan logs saved yet. Go to Daily Plan and click "Log Today's Plan &amp; Debrief".</div>
+                  ) : (
+                    appState.archivedDays.map(log => (
+                      <div key={log.id} className="pb-log-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div className="pb-log-title">{log.dayName.toUpperCase()} — {log.dateStr}</div>
+                            <div className="pb-log-sub">{log.slots.length} logged hour slots</div>
+                          </div>
+                          <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteDailyLogRecord(log.id)}>
+                            <Trash size={14} />
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8, borderTop: '1px dashed var(--pb-border)' }}>
+                          {log.slots.map((s, idx) => (
+                            <div key={idx} style={{ fontSize: 12, display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                              <span style={{ fontFamily: 'IBM Plex Mono, monospace', color: 'var(--pb-amber)', width: 70, flexShrink: 0 }}>{s.hour}:</span>
+                              <div style={{ flex: 1 }}>
+                                {s.planned && <div><b style={{ color: 'var(--pb-cream)' }}>Planned:</b> {s.planned}</div>}
+                                {s.actual && <div style={{ color: 'var(--pb-teal)' }}><b>Actual:</b> {s.actual}</div>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <div className="pb-log-score">{log.scorePercent}%</div>
-                        <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteLogRecord(log.id)}>
-                          <Trash size={14} />
-                        </button>
+                    ))
+                  )}
+                </div>
+
+                {/* Weekly Checklist History Logs */}
+                <div>
+                  <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, color: 'var(--pb-teal)', letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' }}>
+                    Weekly Checklist History ({appState.archivedWeeks.length})
+                  </div>
+
+                  {appState.archivedWeeks.length === 0 ? (
+                    <div className="pb-empty" style={{ marginTop: 10, textAlign: 'left' }}>No archived weeks yet. Complete a week on your Daily Checklist and click "Reset &amp; Archive Week".</div>
+                  ) : (
+                    appState.archivedWeeks.map(log => (
+                      <div key={log.id} className="pb-log-card">
+                        <div>
+                          <div className="pb-log-title">{log.dateRange}</div>
+                          <div className="pb-log-sub">Completed {log.totalCompleted} of {log.totalPossible} total task instances</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <div className="pb-log-score">{log.scorePercent}%</div>
+                          <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteLogRecord(log.id)}>
+                            <Trash size={14} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </>
             )}
 
