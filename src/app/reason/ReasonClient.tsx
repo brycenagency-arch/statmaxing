@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Trash, Check, X, Archive, RotateCcw, Calendar, CheckSquare, FileText, History } from 'lucide-react';
+import { Plus, Trash, Check, X, Archive, RotateCcw, Calendar, CheckSquare, FileText, History, Edit2, ChevronDown, ChevronRight, Info } from 'lucide-react';
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface ReasonEntry {
@@ -13,6 +13,7 @@ interface ReasonEntry {
 interface ChecklistTask {
   id: string;
   title: string;
+  description?: string;
 }
 
 interface WeeklyLogRecord {
@@ -39,10 +40,10 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
 const DEFAULT_TASKS: ChecklistTask[] = [
-  { id: 't1', title: 'Morning Hydration & Stretch' },
-  { id: 't2', title: 'Deep Work Session (2+ Hours)' },
-  { id: 't3', title: 'Workout / Physical Training' },
-  { id: 't4', title: 'Daily Review & Planning' }
+  { id: 't1', title: 'Morning Routine', description: '• Drink 32oz cold water\n• 10 min mobility stretch\n• Take daily vitamins' },
+  { id: 't2', title: 'Deep Work Session (2+ Hours)', description: '• Phone on Do Not Disturb\n• Zero tabs/distractions' },
+  { id: 't3', title: 'Workout / Training', description: '• Push your limits\n• Hydrate post-workout' },
+  { id: 't4', title: 'Nightly Review', description: '• Clear desk & review tomorrow\'s goals' }
 ];
 
 function sanitizeReasonState(raw: any): ReasonState {
@@ -291,6 +292,11 @@ function ReasonApp() {
   const [newName, setNewName] = useState('');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskText, setEditingTaskText] = useState('');
+  const [editingTaskDesc, setEditingTaskDesc] = useState('');
+  const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
   const newNameRef = useRef<HTMLInputElement>(null);
   const newTaskRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -363,10 +369,26 @@ function ReasonApp() {
     const title = newTaskTitle.trim();
     if (!title) return;
     mutate(s => {
-      s.tasks.push({ id: uid(), title });
+      s.tasks.push({ id: uid(), title, description: newTaskDesc.trim() || undefined });
     });
     setNewTaskTitle('');
+    setNewTaskDesc('');
     setAddingTask(false);
+  }
+
+  function saveEditedTask(taskId: string) {
+    const text = editingTaskText.trim();
+    if (!text) return;
+    mutate(s => {
+      const t = s.tasks.find(item => item.id === taskId);
+      if (t) {
+        t.title = text;
+        t.description = editingTaskDesc.trim() || undefined;
+      }
+    });
+    setEditingTaskId(null);
+    setEditingTaskText('');
+    setEditingTaskDesc('');
   }
 
   function deleteTask(taskId: string) {
@@ -895,16 +917,49 @@ function ReasonApp() {
                           <div className="pb-task-list">
                             {appState.tasks.map(t => {
                               const checked = !!appState.weeklyChecks[`${dayIdx}_${t.id}`];
+                              const isExpanded = !!expandedTaskIds[t.id];
+                              const hasDesc = !!t.description;
+
                               return (
                                 <div
                                   key={t.id}
                                   className={'pb-task-item' + (checked ? ' checked' : '')}
-                                  onClick={() => toggleCheck(dayIdx, t.id)}
                                 >
-                                  <div className="pb-task-check">
+                                  <div
+                                    className="pb-task-check"
+                                    onClick={(e) => { e.stopPropagation(); toggleCheck(dayIdx, t.id); }}
+                                    title={checked ? 'Mark uncompleted' : 'Mark completed'}
+                                  >
                                     {checked && <Check size={10} />}
                                   </div>
-                                  <div className="pb-task-title">{t.title}</div>
+                                  <div
+                                    style={{ flex: 1, cursor: 'pointer' }}
+                                    onClick={() => {
+                                      setExpandedTaskIds(prev => ({ ...prev, [t.id]: !prev[t.id] }));
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <div className="pb-task-title">{t.title}</div>
+                                      {hasDesc && (
+                                        <div style={{ color: 'var(--pb-muted)', paddingLeft: 4 }}>
+                                          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {isExpanded && hasDesc && (
+                                      <div style={{
+                                        marginTop: 6,
+                                        paddingTop: 6,
+                                        borderTop: '1px dashed var(--pb-border)',
+                                        fontSize: 11,
+                                        color: 'var(--pb-muted)',
+                                        whiteSpace: 'pre-line',
+                                        lineHeight: 1.4
+                                      }}>
+                                        {t.description}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })}
@@ -920,32 +975,89 @@ function ReasonApp() {
                   </div>
                 </div>
 
-                {/* Task Manager (Add/Remove shared tasks) */}
+                {/* Task Manager (Add/Remove/Edit shared tasks & sub-details) */}
                 <div className="pb-task-mgr">
                   <div className="pb-task-mgr-title">Manage Shared Tasks (Applies to all 7 Days)</div>
                   {appState.tasks.map(t => (
-                    <div key={t.id} className="pb-task-mgr-item">
-                      <span>{t.title}</span>
-                      <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteTask(t.id)}>
-                        <Trash size={13} />
-                      </button>
+                    <div key={t.id} className="pb-task-mgr-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                      {editingTaskId === t.id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                          <input
+                            className="pb-input"
+                            style={{ padding: '6px 10px', fontSize: 13 }}
+                            placeholder="Task Name (e.g. Morning Routine)"
+                            value={editingTaskText}
+                            onChange={e => setEditingTaskText(e.target.value)}
+                            autoFocus
+                          />
+                          <textarea
+                            className="pb-input"
+                            style={{ padding: '6px 10px', fontSize: 12, minHeight: 50, fontFamily: 'IBM Plex Sans, sans-serif' }}
+                            placeholder="Sub-details (e.g. • 32oz water&#10;• 10 min stretch&#10;• Vitamins)"
+                            value={editingTaskDesc}
+                            onChange={e => setEditingTaskDesc(e.target.value)}
+                          />
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            <button className="pb-icon-btn" onClick={() => saveEditedTask(t.id)} title="Save Task">
+                              <Check size={14} color="var(--pb-amber)" /> Save
+                            </button>
+                            <button className="pb-icon-btn" onClick={() => setEditingTaskId(null)} title="Cancel">
+                              <X size={14} /> Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+                          <div>
+                            <div style={{ fontWeight: 500 }}>{t.title}</div>
+                            {t.description && (
+                              <div style={{ fontSize: 11, color: 'var(--pb-muted)', marginTop: 2, whiteSpace: 'pre-line' }}>
+                                {t.description}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <button
+                              className="pb-line-del"
+                              style={{ opacity: 1 }}
+                              onClick={() => {
+                                setEditingTaskId(t.id);
+                                setEditingTaskText(t.title);
+                                setEditingTaskDesc(t.description || '');
+                              }}
+                              title="Edit Task & Details"
+                            >
+                              <Edit2 size={13} color="var(--pb-teal)" />
+                            </button>
+                            <button className="pb-line-del" style={{ opacity: 1 }} onClick={() => deleteTask(t.id)} title="Delete Task">
+                              <Trash size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
 
                   {addingTask ? (
-                    <div className="pb-add-form" style={{ margin: '8px 0 0' }}>
+                    <div className="pb-add-form" style={{ margin: '10px 0 0', flexDirection: 'column' }}>
                       <input
                         ref={newTaskRef}
                         className="pb-input"
-                        placeholder="New Task Name (e.g. Read 20 Pages)"
+                        placeholder="Task Name (e.g. Morning Routine)"
                         value={newTaskTitle}
                         onChange={e => setNewTaskTitle(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') addTask();
-                          if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle(''); }
-                        }}
                       />
-                      <button className="pb-icon-btn" onClick={addTask}><Check size={14} /></button>
+                      <textarea
+                        className="pb-input"
+                        style={{ minHeight: 50, fontSize: 12, fontFamily: 'IBM Plex Sans, sans-serif' }}
+                        placeholder="Sub-details (optional, e.g. • 32oz water&#10;• 10 min stretch)"
+                        value={newTaskDesc}
+                        onChange={e => setNewTaskDesc(e.target.value)}
+                      />
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button className="pb-icon-btn" onClick={addTask}><Check size={14} color="var(--pb-amber)" /> Save Task</button>
+                        <button className="pb-icon-btn" onClick={() => setAddingTask(false)}><X size={14} /> Cancel</button>
+                      </div>
                     </div>
                   ) : (
                     <button className="pb-add" style={{ margin: '8px 0 0', width: '100%' }} onClick={() => setAddingTask(true)}>
