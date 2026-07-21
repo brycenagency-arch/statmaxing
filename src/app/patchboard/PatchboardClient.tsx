@@ -63,7 +63,35 @@ function loadState(): AppState {
 }
 
 function saveState(s: AppState) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    
+    // Background sync to Supabase
+    import('@/lib/supabaseClient').then(({ supabase }) => {
+      supabase.from('StateBackup').upsert({
+        key: STORAGE_KEY,
+        data: s,
+        updatedAt: new Date().toISOString()
+      }).then(({ error }) => {
+        if (error) console.warn('Supabase patchboard sync error:', error.message);
+      });
+    });
+  } catch { /* ignore */ }
+}
+
+function syncPatchboardFromSupabase(onSyncComplete?: () => void) {
+  if (typeof window === 'undefined') return;
+  import('@/lib/supabaseClient').then(({ supabase }) => {
+    supabase.from('StateBackup').select('*').eq('key', STORAGE_KEY).single().then(({ data, error }) => {
+      if (data && data.data) {
+        const localRaw = localStorage.getItem(STORAGE_KEY);
+        if (!localRaw || JSON.stringify(data.data) !== localRaw) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.data));
+          if (onSyncComplete) onSyncComplete();
+        }
+      }
+    });
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -448,6 +476,15 @@ function PatchboardApp() {
     const s = loadState();
     setAppState(s);
     if (s.profiles.length) setSelectedId(s.profiles[0].id);
+    
+    // Background sync from Supabase
+    syncPatchboardFromSupabase(() => {
+      const updatedState = loadState();
+      setAppState(updatedState);
+      if (updatedState.profiles.length && !selectedId) {
+        setSelectedId(updatedState.profiles[0].id);
+      }
+    });
   }, []);
 
   useEffect(() => {

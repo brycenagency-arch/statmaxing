@@ -23,6 +23,14 @@ export default function DashboardClientPage() {
       return;
     }
     setState(s);
+    
+    // Background sync from Supabase
+    import('@/lib/clientDb').then(({ syncStateFromSupabase }) => {
+      syncStateFromSupabase(() => {
+        // State changed, refresh local components
+        setState(getClientState());
+      });
+    });
   }, [router]);
 
   if (!state || !state.user) return null;

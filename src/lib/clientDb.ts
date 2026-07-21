@@ -224,8 +224,36 @@ export function getClientState(): FitQuestState {
 export function saveClientState(state: FitQuestState) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const rawData = JSON.stringify(state);
+    localStorage.setItem(STORAGE_KEY, rawData);
+    
+    // Background backup to Supabase
+    import('@/lib/supabaseClient').then(({ supabase }) => {
+      supabase.from('StateBackup').upsert({
+        key: STORAGE_KEY,
+        data: state,
+        updatedAt: new Date().toISOString()
+      }).then(({ error }) => {
+        if (error) console.warn('Supabase sync error:', error.message);
+      });
+    });
   } catch (e) {
     console.error('Failed to save FitQuest state:', e);
   }
+}
+
+// Background sync helper to restore local state from Supabase
+export function syncStateFromSupabase(onSyncComplete?: () => void) {
+  if (typeof window === 'undefined') return;
+  import('@/lib/supabaseClient').then(({ supabase }) => {
+    supabase.from('StateBackup').select('*').eq('key', STORAGE_KEY).single().then(({ data, error }) => {
+      if (data && data.data) {
+        const localRaw = localStorage.getItem(STORAGE_KEY);
+        if (!localRaw || JSON.stringify(data.data) !== localRaw) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.data));
+          if (onSyncComplete) onSyncComplete();
+        }
+      }
+    });
+  });
 }
