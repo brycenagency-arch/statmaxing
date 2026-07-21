@@ -298,6 +298,17 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   );
 }
 
+function getCurrentDayIdx(): number {
+  const jsDay = new Date().getDay(); // 0 is Sun, 1 is Mon...
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
+
+const HOURS_3AM_TO_12AM = [
+  '3:00 AM', '4:00 AM', '5:00 AM', '6:00 AM', '7:00 AM', '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+  '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM',
+  '9:00 PM', '10:00 PM', '11:00 PM', '12:00 AM'
+];
+
 /* ═══════════════════════════════════════════════════════════
    MAIN REASON APP
 ═══════════════════════════════════════════════════════════ */
@@ -314,7 +325,7 @@ function ReasonApp() {
   const [editingTaskDesc, setEditingTaskDesc] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
-  const [planDayIdx, setPlanDayIdx] = useState<number>(0);
+  const [planDayIdx, setPlanDayIdx] = useState<number>(getCurrentDayIdx);
   const newNameRef = useRef<HTMLInputElement>(null);
   const newTaskRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -455,11 +466,7 @@ function ReasonApp() {
   }
 
   function logCurrentDayPlanAndDebrief() {
-    const hours = [
-      '5:00 AM', '6:00 AM', '7:00 AM', '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-      '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM',
-      '9:00 PM', '10:00 PM', '11:00 PM'
-    ];
+    const hours = HOURS_3AM_TO_12AM;
 
     const dayName = DAYS[planDayIdx];
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -1214,11 +1221,7 @@ function ReasonApp() {
                     HOURLY PLAN &amp; ACTUAL DEBRIEF — {DAYS[planDayIdx].toUpperCase()}
                   </div>
 
-                  {[
-                    '5:00 AM', '6:00 AM', '7:00 AM', '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-                    '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM',
-                    '9:00 PM', '10:00 PM', '11:00 PM'
-                  ].map((hourLabel) => {
+                  {HOURS_3AM_TO_12AM.map((hourLabel) => {
                     const key = `${planDayIdx}_${hourLabel}`;
                     const plannedVal = appState.hourlyPlan[key] || '';
                     const actualVal = appState.hourlyActual[key] || '';
