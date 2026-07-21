@@ -38,46 +38,54 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
-function loadState(): ReasonState {
-  const defaultTasks: ChecklistTask[] = [
-    { id: 't1', title: 'Morning Hydration & Stretch' },
-    { id: 't2', title: 'Deep Work Session (2+ Hours)' },
-    { id: 't3', title: 'Workout / Physical Training' },
-    { id: 't4', title: 'Daily Review & Planning' }
-  ];
+const DEFAULT_TASKS: ChecklistTask[] = [
+  { id: 't1', title: 'Morning Hydration & Stretch' },
+  { id: 't2', title: 'Deep Work Session (2+ Hours)' },
+  { id: 't3', title: 'Workout / Physical Training' },
+  { id: 't4', title: 'Daily Review & Planning' }
+];
 
+function sanitizeReasonState(raw: any): ReasonState {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      reasons: [
+        { id: 'r1', name: 'My Core Purpose', content: 'Write down why you started and what drives you every day...', updatedAt: new Date().toISOString() },
+        { id: 'r2', name: 'Legacy', content: 'What mark do you want to leave behind?', updatedAt: new Date().toISOString() }
+      ],
+      tasks: DEFAULT_TASKS,
+      weeklyChecks: {},
+      archivedWeeks: []
+    };
+  }
+
+  return {
+    reasons: Array.isArray(raw.reasons) ? raw.reasons : [],
+    tasks: Array.isArray(raw.tasks) && raw.tasks.length ? raw.tasks : DEFAULT_TASKS,
+    weeklyChecks: raw.weeklyChecks && typeof raw.weeklyChecks === 'object' ? raw.weeklyChecks : {},
+    archivedWeeks: Array.isArray(raw.archivedWeeks) ? raw.archivedWeeks : []
+  };
+}
+
+function loadState(): ReasonState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<ReasonState>;
-      return {
-        reasons: parsed.reasons || [],
-        tasks: parsed.tasks && parsed.tasks.length ? parsed.tasks : defaultTasks,
-        weeklyChecks: parsed.weeklyChecks || {},
-        archivedWeeks: parsed.archivedWeeks || []
-      };
+      return sanitizeReasonState(JSON.parse(raw));
     }
   } catch { /* fresh start */ }
-  return {
-    reasons: [
-      { id: 'r1', name: 'My Core Purpose', content: 'Write down why you started and what drives you every day...', updatedAt: new Date().toISOString() },
-      { id: 'r2', name: 'Legacy', content: 'What mark do you want to leave behind?', updatedAt: new Date().toISOString() }
-    ],
-    tasks: defaultTasks,
-    weeklyChecks: {},
-    archivedWeeks: []
-  };
+  return sanitizeReasonState(null);
 }
 
 function saveState(s: ReasonState) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    const cleanState = sanitizeReasonState(s);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
     
     // Background sync to Supabase
     import('@/lib/supabaseClient').then(({ supabase }) => {
       supabase.from('StateBackup').upsert({
         key: STORAGE_KEY,
-        data: s,
+        data: cleanState,
         updatedAt: new Date().toISOString()
       }).then(({ error }) => {
         if (error) console.warn('Supabase Reason sync error:', error.message);
@@ -91,9 +99,9 @@ function syncReasonFromSupabase(onSyncComplete?: (state: ReasonState) => void) {
   import('@/lib/supabaseClient').then(({ supabase }) => {
     supabase.from('StateBackup').select('*').eq('key', STORAGE_KEY).single().then(({ data, error }) => {
       if (data && data.data) {
-        const fetchedState = data.data as ReasonState;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(fetchedState));
-        if (onSyncComplete) onSyncComplete(fetchedState);
+        const cleanState = sanitizeReasonState(data.data);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
+        if (onSyncComplete) onSyncComplete(cleanState);
       }
     });
   });
