@@ -123,6 +123,10 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
           background-image: none !important;
           animation: none !important;
         }
+        main {
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+        }
         .pb-gate-root {
           min-height: 100vh;
           display: flex;
@@ -581,6 +585,10 @@ function PatchboardApp() {
           background: #1b2229 !important;
           background-image: none !important;
           animation: none !important;
+        }
+        main {
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
         }
         :root {
           --pb-bg: #1b2229;
