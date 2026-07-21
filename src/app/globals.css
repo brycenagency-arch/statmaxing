@@ -1,8 +1,70 @@
 @import "tailwindcss";
 
-html, body {
-  margin: 0;
-  padding: 0;
-  background: #1b2229;
+@theme {
+  --font-sans: var(--font-inter, Arial, Helvetica, sans-serif);
+  --font-display: var(--font-anton, "Anton", sans-serif);
+
+  --color-brand-primary: #00D9FF;
+  --color-brand-secondary: #FFD84D;
+  --color-tier-rookie: #8B93A8;
+  --color-tier-contender: #00D9FF;
+  --color-tier-warrior: #9D4EDD;
+  --color-tier-elite: #FFD84D;
+
+  --animate-ambient-drift: ambient-drift 20s ease-in-out infinite alternate;
+}
+
+@layer base {
+  :root {
+    --background: #0A0118;
+    --foreground: #ededed;
+  }
+}
+
+@keyframes ambient-drift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+html {
+  background-color: var(--background);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  /* Deep purple-to-navy animated gradient */
+  background: radial-gradient(circle at top left, #150638 0%, transparent 40%),
+              radial-gradient(circle at bottom right, #0D0221 0%, transparent 50%),
+              linear-gradient(135deg, #0A0118 0%, #11042B 50%, #0A0118 100%);
+  background-size: 200% 200%;
+  animation: ambient-drift 30s ease-in-out infinite alternate;
+  font-family: Arial, Helvetica, sans-serif;
   min-height: 100vh;
+}
+
+/* Base utility for the beveled card style */
+.beveled-card {
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  background-color: rgba(21, 6, 56, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+}
+
+/* Simulated glowing border for beveled cards since clip-path cuts off normal borders sometimes */
+.beveled-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  padding: 1px; 
+  background: var(--glow-color, rgba(255,255,255,0.1)); 
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
 }
