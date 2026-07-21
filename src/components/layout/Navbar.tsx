@@ -6,7 +6,7 @@ import { Home, Dumbbell, Utensils, Activity, Phone } from 'lucide-react';
 
 export function Navbar() {
   const pathname = usePathname();
-  if (pathname === '/onboarding' || pathname === '/') return null;
+  if (pathname === '/onboarding' || pathname === '/' || pathname === '/patchboard') return null;
 
   const navItems = [
     { name: 'Home', href: '/dashboard', icon: Home },
