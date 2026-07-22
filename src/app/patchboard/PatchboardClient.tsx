@@ -30,18 +30,74 @@ interface AppState {
 
 /* ─── Topic Bank ─────────────────────────────────────────── */
 const TOPIC_BANK = [
-  { key: 'recent', label: 'Recent Life', blurb: "What's actually going on right now.",
-    examples: ["How's work/school been this week?", "Any weekend plans?", "How'd that thing they mentioned go?"] },
+  { key: 'recent', label: 'Recent Life', blurb: "Daily Lenses to check what changed since yesterday/last week.",
+    examples: [
+      "Current Obsession: What piece of media, food, or habit are they hyperfocusing on right now?",
+      "Micro-Frustration: What minor inconvenience annoyed them today?",
+      "Weekly Win: What is one small victory they had recently?",
+      "Energy Check: On a scale of 1-10, how is their battery today, and what drained or charged it?",
+      "New Discovery: Did they learn a weird fact or find a new song/video today?"
+    ] 
+  },
+  { key: 'games', label: 'Phone Games & Challenges', blurb: 'Fun games to play live over the phone.',
+    examples: [
+      "Two Truths & a Lie: Each person shares three stories, one is fake.",
+      "Trivia Showdown: Look up a quick 5-question quiz on a niche topic you both like.",
+      "Word Association Speedrun: Bounce words back and forth instantly; first to pause or repeat loses.",
+      "Would You Rather Debate: Pick a highly debated hypothetical choice and argue your sides.",
+      "Rapid Fire Questions: Ask 5 silly questions back-to-back; they have to answer under 1 second."
+    ]
+  },
+  { key: 'activities', label: 'Fun Stuff to Do Together', blurb: 'Cooperative activities you can do on the call.',
+    examples: [
+      "Blind Personality Test: Ask them 3 personality questions from an online quiz and read their results.",
+      "Music Exchange: Play a 30-second snippet of a new song you found and have them rate it 1-10.",
+      "Plan a Heist: Cooperatively plan a hypothetical, ridiculous museum heist step-by-step.",
+      "Quick Drawing Challenge: Both draw the same random object in 30 seconds and send a picture.",
+      "Dream Itinerary: Plan a hypothetical 3-day trip where budget doesn't exist."
+    ]
+  },
   { key: 'opinions', label: 'Opinions & Preferences', blurb: 'Light takes that reveal personality.',
-    examples: ["Favorite show they've rewatched", 'Window or aisle seat', "Best meal they've had this year"] },
+    examples: [
+      "Rewatchable Comforts: Favorite movie or show they've rewatched the most.",
+      "Seat Selection: Window or aisle seat preference (and why)?",
+      "Gastronomy: Best meal they've had this entire year.",
+      "Controversial Opinion: A harmless belief they hold that most people disagree with (e.g. food takes).",
+      "Phone Setup: What does their home screen look like and how organized is it?"
+    ] 
+  },
   { key: 'stories', label: 'Stories', blurb: 'Invite them to narrate — people open up when telling stories.',
-    examples: ["Tell me about a trip that didn't go as planned", 'Funniest thing that happened as a kid', 'How you met your best friend'] },
+    examples: [
+      "Travel Fails: Tell me about a trip that didn't go as planned.",
+      "Childhood Mischief: Funniest thing that happened to them as a kid.",
+      "Origin Stories: How you met your best friend or key childhood figures.",
+      "The Scar Story: How did they get their most prominent physical scar?",
+      "First Impression: What did they honestly think of you when you first met?"
+    ] 
+  },
   { key: 'future', label: 'Future-Facing', blurb: 'Plans, goals, things to look forward to.',
-    examples: ['Anything exciting coming up?', 'A bucket-list place', 'Where they want to be in a year'] },
+    examples: [
+      "Anticipations: Anything exciting coming up this week or month?",
+      "Wanderlust: A bucket-list place they want to visit next.",
+      "One-Year Vision: Where do they want to be, career or lifestyle-wise, in exactly one year?",
+      "Next Skill: If they could instantly master any skill or instrument tomorrow, what would it be?",
+      "Ideal Weekend: What does their absolute perfect, uninterrupted Saturday look like?"
+    ] 
+  },
   { key: 'playful', label: 'Playful / Light', blurb: 'Keeps energy up — teasing, hypotheticals, this-or-that.',
-    examples: ['This or that: mountains or beach', 'Would you rather...', 'Tease about something said earlier'] },
+    examples: [
+      "Vibe Check: This or that — cabin in the mountains or resort on the beach?",
+      "Tease Target: Bring up something funny/silly they said earlier in the call.",
+      "Silly Superpower: Would they rather be able to speak to animals or speak all human languages?"
+    ] 
+  },
   { key: 'callback', label: 'Callbacks', blurb: 'Reference something from last time — shows you were listening.',
-    examples: ['Follow up on something funny they said before', 'Ask how a thing they mentioned turned out'] },
+    examples: [
+      "Follow up on something funny or weird they said before.",
+      "Ask how a specific event/thing they mentioned last time turned out.",
+      "Check progress on a goal or habit they said they were starting."
+    ] 
+  },
 ];
 
 /* ─── Utils ──────────────────────────────────────────────── */
